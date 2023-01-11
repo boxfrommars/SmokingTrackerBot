@@ -32,7 +32,7 @@ async def track(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute('INSERT INTO smoking (name, created_at) VALUES (?, ?)', (user.username, datetime.now(timezone.utc)))
     conn.commit()
 
-    await context.bot.send_message(chat_id=update.effective_chat.id, text='ok!')
+    await update.message.reply_text('ok!')
 
 
 async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
