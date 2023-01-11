@@ -5,6 +5,7 @@ import sqlite3
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
+from utils import dict_factory
 
 load_dotenv()
 
@@ -16,8 +17,8 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-conn = sqlite3.connect('db.db', check_same_thread=False)
-conn.row_factory = sqlite3.Row
+conn = sqlite3.connect(db_url, check_same_thread=False)
+conn.row_factory = dict_factory
 cursor = conn.cursor()
 
 
@@ -35,13 +36,28 @@ async def track(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # user = update.message.from_user
+    res = cursor.execute("SELECT name, DATE(DATETIME(created_at, '+03:00')) AS dt, COUNT(*) AS cnt "
+                         "FROM smoking "
+                         "GROUP BY 1,2 "
+                         "ORDER BY created_at ")
 
-    res = cursor.execute('SELECT * FROM smoking')
     smokes = res.fetchall()
 
-    summary_lines = [f'@{s.name} has smoked at {s.created_at}' for s in smokes]
-    summary_text = '\n'.join(summary_lines)
+    summary = {}
+
+    for smoke in smokes:
+        if smoke['name'] not in summary:
+            summary[smoke['name']] = []
+
+        summary[smoke['name']].append(smoke)
+
+    summary_text = ''
+    for name in summary:
+        summary_text += f"@{name}:\n"
+        for s in summary[name]:
+            summary_text += f"{s['dt']}: {s['cnt']} times\n"
+
+        summary_text += '\n'
 
     await context.bot.send_message(chat_id=update.effective_chat.id, text=summary_text)
 
