@@ -4,6 +4,7 @@ import os
 import sqlite3
 from dotenv import load_dotenv
 from telegram import Update
+from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 from utils import dict_factory
 
@@ -64,7 +65,7 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def day_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = cursor.execute("SELECT name, TIME(DATETIME(created_at, '+03:00')) AS dt "
                          "FROM smoking "
-                         "WHERE DATE(DATETIME(created_at, '+03:00')) = DATE(DATETIME('now', '+03:00'), '-1 day') "
+                         "WHERE DATE(DATETIME(created_at, '+03:00')) = DATE(DATETIME('now', '+03:00')) "
                          "ORDER BY created_at")
 
     smokes = res.fetchall()
@@ -80,11 +81,14 @@ async def day_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for name in summary_by_person:
         summary_text += f"@{name}:\n```"
         for s in summary_by_person[name]:
-            summary_text += f"{s['dt']}"
+            summary_text += f"{s['dt']}\n"
 
         summary_text += '\n```'
 
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=summary_text)
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        parse_mode=ParseMode.MARKDOWN_V2,
+        text=summary_text)
 
 
 if __name__ == '__main__':
