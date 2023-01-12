@@ -43,23 +43,49 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     smokes = res.fetchall()
 
-    summary = {}
-
+    summary_by_person = {}
     for smoke in smokes:
-        if smoke['name'] not in summary:
-            summary[smoke['name']] = []
+        if smoke['name'] not in summary_by_person:
+            summary_by_person[smoke['name']] = []
 
-        summary[smoke['name']].append(smoke)
+        summary_by_person[smoke['name']].append(smoke)
 
     summary_text = ''
-    for name in summary:
+    for name in summary_by_person:
         summary_text += f"@{name}:\n"
-        for s in summary[name]:
+        for s in summary_by_person[name]:
             summary_text += f"{s['dt']}: {s['cnt']} times\n"
 
         summary_text += '\n'
 
     await context.bot.send_message(chat_id=update.effective_chat.id, text=summary_text)
+
+
+async def day_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    res = cursor.execute("SELECT name, TIME(DATETIME(created_at, '+03:00')) AS dt "
+                         "FROM smoking "
+                         "WHERE DATE(DATETIME(created_at, '+03:00')) = DATE(DATETIME('now', '+03:00'), '-1 day') "
+                         "ORDER BY created_at")
+
+    smokes = res.fetchall()
+
+    summary_by_person = {}
+    for smoke in smokes:
+        if smoke['name'] not in summary_by_person:
+            summary_by_person[smoke['name']] = []
+
+        summary_by_person[smoke['name']].append(smoke)
+
+    summary_text = ''
+    for name in summary_by_person:
+        summary_text += f"@{name}:\n```"
+        for s in summary_by_person[name]:
+            summary_text += f"{s['dt']}"
+
+        summary_text += '\n```'
+
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=summary_text)
+
 
 if __name__ == '__main__':
     application = ApplicationBuilder().token('5951868120:AAH4KS69D2YHtbFjQJKPMOLxYg985ewvCQQ').build()
@@ -67,9 +93,11 @@ if __name__ == '__main__':
     start_handler = CommandHandler('start', start)
     track_handler = MessageHandler(~filters.COMMAND, track)
     summary_handler = CommandHandler('summary', summary)
+    day_info_handler = CommandHandler('day', day_info)
 
     application.add_handler(start_handler)
     application.add_handler(track_handler)
     application.add_handler(summary_handler)
+    application.add_handler(day_info_handler)
 
     application.run_polling()
