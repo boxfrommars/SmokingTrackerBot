@@ -79,11 +79,11 @@ async def day_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     summary_text = ''
     for name in summary_by_person:
-        summary_text += f"@{name}:\n```"
+        summary_text += f"@{name}:\n```\n"
         for s in summary_by_person[name]:
             summary_text += f"{s['dt']}\n"
 
-        summary_text += '\n```'
+        summary_text += '```\n'
 
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
