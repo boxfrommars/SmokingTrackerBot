@@ -10,41 +10,39 @@ from utils import dict_factory
 
 load_dotenv()
 
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-DB_URL = os.getenv('DATABASE_URL')
+telegram_token = os.getenv('TELEGRAM_TOKEN')
+db_url = os.getenv('DATABASE_URL')
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-conn = sqlite3.connect(DB_URL, check_same_thread=False)
+conn = sqlite3.connect(db_url, check_same_thread=False)
 conn.row_factory = dict_factory
+cursor = conn.cursor()
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=update.effective_chat.id, text="I'm a bot, please talk to me!")
 
 
-async def track(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def track(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
 
-    conn.execute(
-        'INSERT INTO smoking (id, name, created_at) VALUES (?, ?, ?)',
-        (None, user.username, datetime.now(timezone.utc)))
+    cursor.execute('INSERT INTO smoking (name, created_at) VALUES (?, ?)', (user.username, datetime.now(timezone.utc)))
     conn.commit()
 
     await update.message.reply_text('ok!')
 
 
-async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    smokes = conn.execute(
-        """
-        SELECT name, DATE(DATETIME(created_at, '+03:00')) AS dt, COUNT(*) AS cnt
-        FROM smoking
-        GROUP BY 1,2
-        """
-    ).fetchall()
+async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    res = cursor.execute("SELECT name, DATE(DATETIME(created_at, '+03:00')) AS dt, COUNT(*) AS cnt "
+                         "FROM smoking "
+                         "GROUP BY 1,2 "
+                         "ORDER BY created_at ")
+
+    smokes = res.fetchall()
 
     summary_by_person = {}
     for smoke in smokes:
@@ -64,15 +62,13 @@ async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await context.bot.send_message(chat_id=update.effective_chat.id, text=summary_text)
 
 
-async def day_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    smokes = conn.execute(
-        """
-        SELECT name, TIME(DATETIME(created_at, '+03:00')) AS dt
-        FROM smoking
-        WHERE DATE(DATETIME(created_at, '+03:00')) = DATE(DATETIME('now', '+03:00'))
-        ORDER BY created_at
-        """
-    ).fetchall()
+async def day_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    res = cursor.execute("SELECT name, TIME(DATETIME(created_at, '+03:00')) AS dt "
+                         "FROM smoking "
+                         "WHERE DATE(DATETIME(created_at, '+03:00')) = DATE(DATETIME('now', '+03:00')) "
+                         "ORDER BY created_at")
+
+    smokes = res.fetchall()
 
     summary_by_person = {}
     for smoke in smokes:
@@ -96,7 +92,7 @@ async def day_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 if __name__ == '__main__':
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    application = ApplicationBuilder().token('5951868120:AAH4KS69D2YHtbFjQJKPMOLxYg985ewvCQQ').build()
 
     start_handler = CommandHandler('start', start)
     track_handler = MessageHandler(~filters.COMMAND, track)
