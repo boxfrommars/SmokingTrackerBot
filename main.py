@@ -10,15 +10,15 @@ from utils import dict_factory
 
 load_dotenv()
 
-telegram_token = os.getenv('TELEGRAM_TOKEN')
-db_url = os.getenv('DATABASE_URL')
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+DB_URL = os.getenv('DATABASE_URL')
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-conn = sqlite3.connect(db_url, check_same_thread=False)
+conn = sqlite3.connect(DB_URL, check_same_thread=False)
 conn.row_factory = dict_factory
 cursor = conn.cursor()
 
@@ -92,7 +92,7 @@ async def day_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 if __name__ == '__main__':
-    application = ApplicationBuilder().token('5951868120:AAH4KS69D2YHtbFjQJKPMOLxYg985ewvCQQ').build()
+    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     start_handler = CommandHandler('start', start)
     track_handler = MessageHandler(~filters.COMMAND, track)
