@@ -1,0 +1,21 @@
+[Unit]
+Description=SmokingTrackerBot Telegram polling service
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=xu
+Group=xu
+WorkingDirectory=/home/xu/Workspace/SmokingTrackerBot
+EnvironmentFile=/home/xu/Workspace/SmokingTrackerBot/.env
+ExecStart=/home/xu/Workspace/SmokingTrackerBot/.venv/bin/python /home/xu/Workspace/SmokingTrackerBot/main.py
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
