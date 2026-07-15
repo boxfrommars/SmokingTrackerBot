@@ -7,24 +7,21 @@ treats regular text messages as new records, and supports these commands:
 - `/summary` — show totals grouped by user and day;
 - `/day` — show events recorded today.
 
-The production setup uses CPython 3.14, a dedicated virtual environment, and
-systemd. A polling bot does not require an inbound port, domain, Nginx virtual
-host, or TLS certificate.
+A polling bot does not require an inbound port, domain, Nginx virtual host, or
+TLS certificate.
 
 ## Requirements
 
-- Linux server with CPython 3.14 installed separately from the system Python;
+- Linux server with CPython 3.14;
 - Git and SSH access to the repository;
 - Telegram bot token issued by BotFather;
-- systemd;
-- project path `/home/xu/Workspace/SmokingTrackerBot` and user `xu`, or
-  corresponding changes to the provided unit file.
+- systemd for production process management.
 
-Verify that the required Python modules are available before deployment:
+Verify that Python and the required standard-library modules are available:
 
 ```bash
-/opt/python/3.14.6/bin/python3.14 --version
-/opt/python/3.14.6/bin/python3.14 -c \
+python3.14 --version
+python3.14 -c \
   'import ssl, sqlite3, lzma, bz2, venv; print(ssl.OPENSSL_VERSION); print(sqlite3.sqlite_version)'
 ```
 
@@ -38,36 +35,43 @@ DATABASE_URL=db.db
 ```
 
 The token in `.env.example` is an example, not a working secret. Both `.env`
-and `db.db` are excluded from Git and should have mode `600` in production.
-Never place the token in Git, logs, or command-line arguments.
+and `db.db` are excluded from Git and should only be accessible to the service
+account in production. Never place the token in Git, logs, or command-line
+arguments.
 
-## Deploying a new instance
+## Deployment
 
-The commands below match the paths and user configured in
-`deploy/smoking-tracker-bot.service`.
+1. Clone the repository and switch to `master`.
+2. Create a virtual environment with CPython 3.14.
+3. Install the locked dependencies.
+4. Create `.env` based on `.env.example` and add the real Telegram token.
+5. Initialize a new database with Alembic, or transfer the existing `.env` and
+   SQLite database from the previous deployment.
+6. Run the tests and the application preflight check.
+7. Adapt the provided systemd unit to the deployment user and project path,
+   install it, and enable the service.
 
-Clone the repository and create the virtual environment:
+Typical project setup commands:
 
 ```bash
-mkdir -p /home/xu/Workspace
-git clone git@github.com:boxfrommars/SmokingTrackerBot.git \
-  /home/xu/Workspace/SmokingTrackerBot
-cd /home/xu/Workspace/SmokingTrackerBot
+git clone <repository-url>
+cd SmokingTrackerBot
 git switch master
 
-/opt/python/3.14.6/bin/python3.14 -m venv .venv
+python3.14 -m venv .venv
 .venv/bin/python -m pip install --require-hashes -r requirements.txt
 .venv/bin/python -W error::DeprecationWarning -m unittest discover -s tests -v
 ```
 
-Create the configuration and initialize a new database:
+For a new database:
 
 ```bash
-cp .env.example .env
-chmod 600 .env
-nano .env
-
 .venv/bin/alembic upgrade head
+```
+
+Before starting the service, run:
+
+```bash
 .venv/bin/python main.py --check
 ```
 
@@ -75,86 +79,48 @@ nano .env
 `quick_check`, verifies the database schema, and calls Telegram `getMe`. It does
 not start polling or call `getUpdates`.
 
-Install and start the systemd unit only after all checks pass:
+The example unit is located at `deploy/smoking-tracker-bot.service`. Update its
+user, group, working directory, environment file, and executable paths for the
+target environment before installing it.
 
-```bash
-sudo install -o root -g root -m 0644 \
-  deploy/smoking-tracker-bot.service \
-  /etc/systemd/system/smoking-tracker-bot.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now smoking-tracker-bot.service
+The unit is configured to:
 
-systemctl is-active smoking-tracker-bot.service
-systemctl is-enabled smoking-tracker-bot.service
-systemctl status smoking-tracker-bot.service --no-pager
-```
+- start after the network is online;
+- start automatically after a server reboot;
+- restart the bot five seconds after an abnormal exit;
+- leave the bot stopped after a manual service stop.
 
-The unit starts after the network is online, starts automatically after a
-server reboot, and restarts the bot five seconds after an abnormal exit. A
-manual `systemctl stop` does not trigger an automatic restart.
+## Migrating an existing deployment
 
-If the deployment user or path differs, update `User`, `Group`,
-`WorkingDirectory`, `EnvironmentFile`, and `ExecStart` in the unit file before
-installing it.
+Never run two polling processes with the same Telegram token.
 
-## Migrating an existing SQLite database
+Prepare and validate the new deployment while its service is stopped. When it
+is ready, stop the old bot completely, transfer the current `.env` and SQLite
+database to the new deployment using a secure method, verify that the files are
+intact and accessible only to the service account, and start the new service.
 
-Never run two polling processes with the same Telegram token. Prepare the new
-server while its unit is stopped, and copy the final database only after the
-old bot has stopped completely.
+After cutover, test `/start`, `/summary`, `/day`, and one regular message.
+Confirm that exactly one process is polling, the service remains active, and
+its restart counter is stable.
 
-1. On the new server, prepare the repository, virtual environment,
-   dependencies, `.env`, and systemd unit. Keep the unit stopped and disabled.
-2. Test the application with a temporary database:
-
-   ```bash
-   DATABASE_URL=/tmp/smoking-preflight.db .venv/bin/alembic upgrade head
-   DATABASE_URL=/tmp/smoking-preflight.db .venv/bin/python main.py --check
-   rm -f /tmp/smoking-preflight.db
-   ```
-
-3. Confirm that the new service is stopped. Gracefully stop the old polling
-   process and wait until it has exited.
-4. Create a rollback copy and checksum on the old server:
-
-   ```bash
-   cp --preserve=timestamps,mode db.db db.db.rollback-YYYYMMDD
-   chmod 600 db.db.rollback-YYYYMMDD
-   sha256sum db.db
-   ```
-
-5. Transfer `.env` and `db.db` over SSH/SCP without printing their contents.
-   Compare the SHA-256 checksum on the new server and set ownership and modes:
-
-   ```bash
-   chown xu:xu .env db.db
-   chmod 600 .env db.db
-   .venv/bin/python main.py --check
-   sudo systemctl enable --now smoking-tracker-bot.service
-   ```
-
-6. Test `/start`, `/summary`, `/day`, and one regular message. Confirm that
-   exactly one process is polling and that the restart counter is stable:
-
-   ```bash
-   systemctl show smoking-tracker-bot.service -p NRestarts -p ExecMainPID
-   journalctl -u smoking-tracker-bot.service --since '10 minutes ago' --no-pager
-   ```
-
-Keep the stopped old deployment and its rollback database for a short rollback
+Keep the stopped old deployment and a database backup for a short rollback
 window. Do not leave the old process running.
 
 ## Updating a deployed instance
 
+Stop or restart the service only after the updated code and dependencies have
+passed their checks:
+
 ```bash
-cd /home/xu/Workspace/SmokingTrackerBot
 git switch master
 git pull --ff-only
 .venv/bin/python -m pip install --require-hashes -r requirements.txt
 .venv/bin/python -W error::DeprecationWarning -m unittest discover -s tests -v
-sudo systemctl restart smoking-tracker-bot.service
-systemctl is-active smoking-tracker-bot.service
+.venv/bin/python main.py --check
 ```
+
+Then restart the systemd service and confirm that it is active without a
+growing restart count.
 
 Update direct dependencies in `requirements.in`. Generate the lock file on
 Linux with CPython 3.14 and the pinned `pip-tools` version:
@@ -170,15 +136,9 @@ Commit both `requirements.in` and the generated `requirements.txt`.
 
 ## Rollback
 
-1. Stop the new instance completely:
-
-   ```bash
-   sudo systemctl disable --now smoking-tracker-bot.service
-   ```
-
-2. Confirm that its polling process has exited.
-3. If the new instance accepted records after cutover, copy its current `db.db`
-   back to the old server while preserving the previous database separately.
-4. Start the old bot only after confirming that the new process is stopped.
+Stop the new service and confirm that its polling process has exited. If the
+new deployment accepted records after cutover, transfer its current database
+back to the old deployment while retaining a backup. Start the old bot only
+after confirming that the new process is stopped.
 
 At every stage, no more than one polling process may use the Telegram token.
