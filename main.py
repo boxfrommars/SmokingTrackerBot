@@ -102,6 +102,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def track(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
+    logger.info(
+        'Tracking update_id=%s message_id=%s',
+        update.update_id,
+        update.message.message_id,
+    )
     connection = get_connection(context)
     connection.execute(
         'INSERT INTO smoking (name, created_at) VALUES (?, ?)',

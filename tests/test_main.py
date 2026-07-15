@@ -112,9 +112,10 @@ class HandlerTests(DatabaseTestCase):
     def test_track_inserts_a_row_and_replies(self):
         message = SimpleNamespace(
             from_user=SimpleNamespace(username='alice'),
+            message_id=100,
             reply_text=AsyncMock(),
         )
-        update = SimpleNamespace(message=message)
+        update = SimpleNamespace(update_id=200, message=message)
 
         asyncio.run(main.track(update, self.context))
 
