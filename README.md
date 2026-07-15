@@ -1,73 +1,52 @@
 # SmokingTrackerBot
 
-Telegram-бот для учёта событий курения в SQLite. Бот работает через long polling,
-принимает обычные сообщения как новые записи и поддерживает команды:
+A Telegram bot that records smoking events in SQLite. It uses long polling,
+treats regular text messages as new records, and supports these commands:
 
-- `/start` — проверка доступности бота;
-- `/summary` — сводка по дням и пользователям;
-- `/day` — записи за текущий день.
+- `/start` — check that the bot is available;
+- `/summary` — show totals grouped by user and day;
+- `/day` — show events recorded today.
 
-Production-развёртывание рассчитано на Ubuntu 24.04, CPython 3.14.6, отдельный
-virtual environment и systemd. Входящий порт, Nginx, домен и TLS-сертификат для
-polling-бота не нужны.
+The production setup uses CPython 3.14, a dedicated virtual environment, and
+systemd. A polling bot does not require an inbound port, domain, Nginx virtual
+host, or TLS certificate.
 
-## Конфигурация
+## Requirements
 
-Приложение читает две переменные из `.env`:
+- Linux server with CPython 3.14 installed separately from the system Python;
+- Git and SSH access to the repository;
+- Telegram bot token issued by BotFather;
+- systemd;
+- project path `/home/xu/Workspace/SmokingTrackerBot` and user `xu`, or
+  corresponding changes to the provided unit file.
+
+Verify that the required Python modules are available before deployment:
+
+```bash
+/opt/python/3.14.6/bin/python3.14 --version
+/opt/python/3.14.6/bin/python3.14 -c \
+  'import ssl, sqlite3, lzma, bz2, venv; print(ssl.OPENSSL_VERSION); print(sqlite3.sqlite_version)'
+```
+
+## Configuration
+
+The application reads two variables from `.env`:
 
 ```dotenv
 TELEGRAM_TOKEN=<token from BotFather>
 DATABASE_URL=db.db
 ```
 
-Значение токена в `.env.example` является примером, а не рабочим секретом.
-Файлы `.env` и `db.db` игнорируются Git и должны иметь права `600` на сервере.
-Не передавайте токен через Git, логи или командную строку.
+The token in `.env.example` is an example, not a working secret. Both `.env`
+and `db.db` are excluded from Git and should have mode `600` in production.
+Never place the token in Git, logs, or command-line arguments.
 
-## Установка CPython 3.14.6 на Ubuntu 24.04
+## Deploying a new instance
 
-Системный Python Ubuntu заменять нельзя. CPython устанавливается параллельно в
-`/opt/python/3.14.6`.
-
-```bash
-sudo apt-get update
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  build-essential curl ca-certificates xz-utils \
-  libssl-dev zlib1g-dev libncurses-dev libreadline-dev \
-  libsqlite3-dev libgdbm-dev libdb5.3-dev libbz2-dev \
-  libexpat1-dev liblzma-dev tk-dev libffi-dev uuid-dev
-
-cd /tmp
-curl -fSLO https://www.python.org/ftp/python/3.14.6/Python-3.14.6.tar.xz
-echo '143b1dddefaec3bd2e21e3b839b34a2b7fb9842272883c576420d605e9f30c63  Python-3.14.6.tar.xz' \
-  | sha256sum -c -
-tar -xf Python-3.14.6.tar.xz
-cd Python-3.14.6
-./configure \
-  --prefix=/opt/python/3.14.6 \
-  --enable-optimizations \
-  --with-lto \
-  --with-ensurepip=install
-make -j1
-sudo make altinstall
-```
-
-Однопоточная PGO/LTO-сборка безопаснее для небольшого дроплета без swap, но
-может выполняться десятки минут. После установки проверьте runtime и основные
-extension-модули:
-
-```bash
-/opt/python/3.14.6/bin/python3.14 --version
-/opt/python/3.14.6/bin/python3.14 -c \
-  'import ssl, sqlite3, lzma, bz2, venv; print(ssl.OPENSSL_VERSION); print(sqlite3.sqlite_version)'
-python3 --version  # системная версия должна остаться неизменной
-```
-
-## Развёртывание проекта
-
-Команды ниже предполагают пользователя `xu` и каталог
-`/home/xu/Workspace/SmokingTrackerBot`, совпадающие с systemd unit в
+The commands below match the paths and user configured in
 `deploy/smoking-tracker-bot.service`.
+
+Clone the repository and create the virtual environment:
 
 ```bash
 mkdir -p /home/xu/Workspace
@@ -81,7 +60,7 @@ git switch master
 .venv/bin/python -W error::DeprecationWarning -m unittest discover -s tests -v
 ```
 
-Для нового экземпляра создайте конфигурацию и пустую базу:
+Create the configuration and initialize a new database:
 
 ```bash
 cp .env.example .env
@@ -92,10 +71,11 @@ nano .env
 .venv/bin/python main.py --check
 ```
 
-`main.py --check` проверяет обязательные переменные, SQLite `quick_check`, схему
-таблицы и Telegram `getMe`. Polling и `getUpdates` в этом режиме не запускаются.
+`main.py --check` validates the required environment variables, runs SQLite
+`quick_check`, verifies the database schema, and calls Telegram `getMe`. It does
+not start polling or call `getUpdates`.
 
-Установите сервис только после успешных проверок:
+Install and start the systemd unit only after all checks pass:
 
 ```bash
 sudo install -o root -g root -m 0644 \
@@ -109,22 +89,23 @@ systemctl is-enabled smoking-tracker-bot.service
 systemctl status smoking-tracker-bot.service --no-pager
 ```
 
-Unit запускается после готовности сети, автоматически стартует после reboot и
-перезапускает процесс через пять секунд при аварийном завершении. Ручной
-`systemctl stop` не вызывает автоматический restart.
+The unit starts after the network is online, starts automatically after a
+server reboot, and restarts the bot five seconds after an abnormal exit. A
+manual `systemctl stop` does not trigger an automatic restart.
 
-Если пользователь или путь отличаются, сначала исправьте `User`, `Group`,
-`WorkingDirectory`, `EnvironmentFile` и `ExecStart` в unit-файле.
+If the deployment user or path differs, update `User`, `Group`,
+`WorkingDirectory`, `EnvironmentFile`, and `ExecStart` in the unit file before
+installing it.
 
-## Перенос существующей SQLite-базы
+## Migrating an existing SQLite database
 
-Нельзя одновременно запускать два polling-процесса с одним Telegram-токеном.
-Новый сервер полностью подготавливается при остановленном unit, а финальная база
-копируется только после остановки старого бота.
+Never run two polling processes with the same Telegram token. Prepare the new
+server while its unit is stopped, and copy the final database only after the
+old bot has stopped completely.
 
-1. На новом сервере установите Python, проект, зависимости, `.env` и systemd
-   unit, но оставьте unit остановленным и disabled.
-2. Проверьте код на временной базе:
+1. On the new server, prepare the repository, virtual environment,
+   dependencies, `.env`, and systemd unit. Keep the unit stopped and disabled.
+2. Test the application with a temporary database:
 
    ```bash
    DATABASE_URL=/tmp/smoking-preflight.db .venv/bin/alembic upgrade head
@@ -132,9 +113,9 @@ Unit запускается после готовности сети, автом
    rm -f /tmp/smoking-preflight.db
    ```
 
-3. Убедитесь, что новый сервис не работает, затем штатно остановите старый
-   polling-процесс и дождитесь его полного завершения.
-4. На старом сервере создайте rollback-копию и checksum:
+3. Confirm that the new service is stopped. Gracefully stop the old polling
+   process and wait until it has exited.
+4. Create a rollback copy and checksum on the old server:
 
    ```bash
    cp --preserve=timestamps,mode db.db db.db.rollback-YYYYMMDD
@@ -142,8 +123,8 @@ Unit запускается после готовности сети, автом
    sha256sum db.db
    ```
 
-5. Передайте `.env` и `db.db` по SSH/SCP без вывода содержимого. На новом
-   сервере сравните SHA-256, затем установите права:
+5. Transfer `.env` and `db.db` over SSH/SCP without printing their contents.
+   Compare the SHA-256 checksum on the new server and set ownership and modes:
 
    ```bash
    chown xu:xu .env db.db
@@ -152,15 +133,18 @@ Unit запускается после готовности сети, автом
    sudo systemctl enable --now smoking-tracker-bot.service
    ```
 
-6. Проверьте `/start`, `/summary`, `/day` и одно обычное сообщение. Убедитесь,
-   что работает ровно один процесс и `NRestarts` не растёт:
+6. Test `/start`, `/summary`, `/day`, and one regular message. Confirm that
+   exactly one process is polling and that the restart counter is stable:
 
    ```bash
    systemctl show smoking-tracker-bot.service -p NRestarts -p ExecMainPID
    journalctl -u smoking-tracker-bot.service --since '10 minutes ago' --no-pager
    ```
 
-## Обновление развёрнутого экземпляра
+Keep the stopped old deployment and its rollback database for a short rollback
+window. Do not leave the old process running.
+
+## Updating a deployed instance
 
 ```bash
 cd /home/xu/Workspace/SmokingTrackerBot
@@ -172,8 +156,8 @@ sudo systemctl restart smoking-tracker-bot.service
 systemctl is-active smoking-tracker-bot.service
 ```
 
-Перед изменением прямых зависимостей обновите `requirements.in`, а lock-файл
-генерируйте на Linux с CPython 3.14 и фиксированной версией `pip-tools`:
+Update direct dependencies in `requirements.in`. Generate the lock file on
+Linux with CPython 3.14 and the pinned `pip-tools` version:
 
 ```bash
 .venv/bin/python -m pip install pip-tools==7.5.3
@@ -182,18 +166,19 @@ systemctl is-active smoking-tracker-bot.service
   --output-file=requirements.txt requirements.in
 ```
 
+Commit both `requirements.in` and the generated `requirements.txt`.
+
 ## Rollback
 
-1. Полностью остановите новый экземпляр:
+1. Stop the new instance completely:
 
    ```bash
    sudo systemctl disable --now smoking-tracker-bot.service
    ```
 
-2. Убедитесь, что новый polling-процесс завершён.
-3. Если после переключения появились новые записи, скопируйте актуальную
-   `db.db` обратно на старый сервер и сохраните там предыдущую базу отдельно.
-4. Только после этого запустите старый экземпляр в прежнем окружении.
+2. Confirm that its polling process has exited.
+3. If the new instance accepted records after cutover, copy its current `db.db`
+   back to the old server while preserving the previous database separately.
+4. Start the old bot only after confirming that the new process is stopped.
 
-В любой момент с одним Telegram-токеном должен работать не более чем один
-polling-процесс.
+At every stage, no more than one polling process may use the Telegram token.
