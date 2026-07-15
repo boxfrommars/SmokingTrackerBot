@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+import logging
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -33,6 +34,10 @@ class DatabaseTestCase(unittest.TestCase):
 
 
 class SettingsTests(unittest.TestCase):
+    def test_http_client_does_not_log_token_bearing_urls_at_info(self):
+        self.assertGreater(logging.getLogger('httpx').getEffectiveLevel(), logging.INFO)
+        self.assertGreater(logging.getLogger('httpcore').getEffectiveLevel(), logging.INFO)
+
     def test_missing_required_environment_variables(self):
         with self.assertRaisesRegex(ValueError, 'TELEGRAM_TOKEN, DATABASE_URL'):
             main.load_settings({})

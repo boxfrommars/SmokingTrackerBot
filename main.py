@@ -28,6 +28,8 @@ EXPECTED_COLUMNS = ('id', 'name', 'created_at')
 
 logging.basicConfig(format=LOG_FORMAT, level=logging.INFO)
 logger = logging.getLogger(__name__)
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('httpcore').setLevel(logging.WARNING)
 
 
 @dataclass(frozen=True)
