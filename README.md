@@ -7,17 +7,16 @@ treats regular text messages as new records, and supports these commands:
 - `/summary` — show totals grouped by user and day;
 - `/day` — show events recorded today.
 
-A polling bot does not require an inbound port, domain, Nginx virtual host, or
-TLS certificate.
+A polling bot does not require an inbound port, domain, HTTP server, or TLS
+certificate.
 
 ## Requirements
 
-- Linux server with CPython 3.14;
-- Git and SSH access to the repository;
-- Telegram bot token issued by BotFather;
-- systemd for production process management.
+- CPython 3.14 with `venv`, `ssl`, and `sqlite3` support;
+- a Telegram bot token issued by BotFather.
 
-Verify that Python and the required standard-library modules are available:
+The dependency lock is generated for Linux with CPython 3.14. Verify the
+runtime and its required standard-library modules before installing packages:
 
 ```bash
 python3.14 --version
@@ -25,102 +24,68 @@ python3.14 -c \
   'import ssl, sqlite3, lzma, bz2, venv; print(ssl.OPENSSL_VERSION); print(sqlite3.sqlite_version)'
 ```
 
-## Configuration
+## Setup
 
-The application reads two variables from `.env`:
+Create an isolated environment and install the complete hashed lock:
+
+```bash
+python3.14 -m venv .venv
+.venv/bin/python -m pip install --require-hashes -r requirements.txt
+```
+
+Create `.env` from `.env.example` and provide the two required variables:
 
 ```dotenv
 TELEGRAM_TOKEN=<token from BotFather>
 DATABASE_URL=db.db
 ```
 
-The token in `.env.example` is an example, not a working secret. Both `.env`
-and `db.db` are excluded from Git and should only be accessible to the service
-account in production. Never place the token in Git, logs, or command-line
-arguments.
+`DATABASE_URL` accepts either a SQLite file path or a `sqlite:///` URL. A
+relative path is resolved from the process working directory. Other database
+schemes are rejected.
 
-## Deployment
+The token in `.env.example` is a non-working example. Both `.env` and `db.db`
+are excluded from Git. Never place the token, a production environment file,
+the user database, or a backup in Git, logs, or command-line arguments.
 
-1. Clone the repository and switch to `master`.
-2. Create a virtual environment with CPython 3.14.
-3. Install the locked dependencies.
-4. Create `.env` based on `.env.example` and add the real Telegram token.
-5. Initialize a new database with Alembic, or transfer the existing `.env` and
-   SQLite database from the previous deployment.
-6. Run the tests and the application preflight check.
-7. Adapt the provided systemd unit to the deployment user and project path,
-   install it, and enable the service.
-
-Typical project setup commands:
+Initialize a new database, or bring an existing one to the current schema:
 
 ```bash
-git clone <repository-url>
-cd SmokingTrackerBot
-git switch master
+.venv/bin/python -m alembic upgrade head
+```
 
-python3.14 -m venv .venv
-.venv/bin/python -m pip install --require-hashes -r requirements.txt
+For an existing persistent database, follow the backup and migration
+requirements in [DEPLOYMENT.md](DEPLOYMENT.md) before applying migrations.
+
+## Verification
+
+Run the automated tests and application preflight check:
+
+```bash
+.venv/bin/python -m pip check
 .venv/bin/python -W error::DeprecationWarning -m unittest discover -s tests -v
-```
-
-For a new database:
-
-```bash
-.venv/bin/alembic upgrade head
-```
-
-Before starting the service, run:
-
-```bash
+.venv/bin/python -m alembic current --check-heads
 .venv/bin/python main.py --check
 ```
 
-`main.py --check` validates the required environment variables, runs SQLite
-`quick_check`, verifies the database schema, and calls Telegram `getMe`. It does
-not start polling or call `getUpdates`.
+`main.py --check` validates the required environment variables, confirms that
+the SQLite file exists, runs SQLite `quick_check`, verifies the `smoking` table
+schema, and calls Telegram `getMe`. It does not start polling or call
+`getUpdates`.
 
-The example unit is located at `deploy/smoking-tracker-bot.service`. Update its
-user, group, working directory, environment file, and executable paths for the
-target environment before installing it.
+## Running the bot
 
-The unit is configured to:
-
-- start after the network is online;
-- start automatically after a server reboot;
-- restart the bot five seconds after an abnormal exit;
-- leave the bot stopped after a manual service stop.
-
-## Migrating an existing deployment
-
-Never run two polling processes with the same Telegram token.
-
-Prepare and validate the new deployment while its service is stopped. When it
-is ready, stop the old bot completely, transfer the current `.env` and SQLite
-database to the new deployment using a secure method, verify that the files are
-intact and accessible only to the service account, and start the new service.
-
-After cutover, test `/start`, `/summary`, `/day`, and one regular message.
-Confirm that exactly one process is polling, the service remains active, and
-its restart counter is stable.
-
-Keep the stopped old deployment and a database backup for a short rollback
-window. Do not leave the old process running.
-
-## Updating a deployed instance
-
-Stop or restart the service only after the updated code and dependencies have
-passed their checks:
+Start the long-running polling process from the project root:
 
 ```bash
-git switch master
-git pull --ff-only
-.venv/bin/python -m pip install --require-hashes -r requirements.txt
-.venv/bin/python -W error::DeprecationWarning -m unittest discover -s tests -v
-.venv/bin/python main.py --check
+.venv/bin/python main.py
 ```
 
-Then restart the systemd service and confirm that it is active without a
-growing restart count.
+Never run this command with the production token while another instance is
+polling. Use a separate test bot token for development, or stop and confirm the
+exit of the existing process before starting its replacement.
+
+## Updating dependencies
 
 Update direct dependencies in `requirements.in`. Generate the lock file on
 Linux with CPython 3.14 and the pinned `pip-tools` version:
@@ -132,13 +97,11 @@ Linux with CPython 3.14 and the pinned `pip-tools` version:
   --output-file=requirements.txt requirements.in
 ```
 
-Commit both `requirements.in` and the generated `requirements.txt`.
+Commit `requirements.in` and the generated `requirements.txt` together. Do not
+edit the lock file manually.
 
-## Rollback
+## Deployment
 
-Stop the new service and confirm that its polling process has exited. If the
-new deployment accepted records after cutover, transfer its current database
-back to the old deployment while retaining a backup. Start the old bot only
-after confirming that the new process is stopped.
-
-At every stage, no more than one polling process may use the Telegram token.
+[DEPLOYMENT.md](DEPLOYMENT.md) is the canonical, environment-independent
+contract for runtime, configuration, persistent data, migrations, release
+checks, smoke testing, backup, and rollback.

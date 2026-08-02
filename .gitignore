@@ -1,7 +1,6 @@
 .env
 db.db
 test.py
-AGENTS.md
 .venv/
 __pycache__/
 *.py[cod]
