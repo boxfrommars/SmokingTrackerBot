@@ -1,4 +1,6 @@
-alembic==1.18.5
-python-dotenv==1.2.2
-python-telegram-bot==22.8
-SQLAlchemy==2.0.51
+alembic>=1.20.1
+# Security floor: GHSA-6q48-6c7w-9gw2 (compromised emSign CA chain).
+certifi>=2026.10.19
+python-dotenv>=1.2.4
+python-telegram-bot>=22.8
+SQLAlchemy>=2.1.6

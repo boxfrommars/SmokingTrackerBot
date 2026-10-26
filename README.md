@@ -87,11 +87,21 @@ exit of the existing process before starting its replacement.
 
 ## Updating dependencies
 
+`requirements.in` lists minimum versions of direct dependencies using `>=`.
+The generated `requirements.txt` locks exact versions and hashes for reproducible
+installation. Newer versions, including major releases, are selected during an
+explicit lock update with `--upgrade` and must pass the verification checks.
+
+`requirements.in` requires `certifi>=2026.10.19` to exclude the compromised
+emSign CA chain described in
+[GHSA-6q48-6c7w-9gw2](https://github.com/certifi/python-certifi/security/advisories/GHSA-6q48-6c7w-9gw2).
+The generated lock pins an exact version that satisfies this security floor.
+
 Update direct dependencies in `requirements.in`. Generate the lock file on
-Linux with CPython 3.14 and the pinned `pip-tools` version:
+Linux with CPython 3.14 and the pinned, compatible `pip` and `pip-tools` versions:
 
 ```bash
-.venv/bin/python -m pip install pip-tools==7.5.3
+.venv/bin/python -m pip install pip==26.2.2 pip-tools==7.6.2
 .venv/bin/python -m piptools compile \
   --upgrade --generate-hashes --strip-extras \
   --output-file=requirements.txt requirements.in
